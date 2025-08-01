@@ -15,8 +15,15 @@ public:
         , capacity_(size)
         , size_(size)  //
     {
-        for (size_t i = 0; i != size; ++i) {
+        size_t i = 0;
+        try {
+        for (; i != size; ++i) {
             new (data_ + i) T();
+        }
+        } catch (...) {
+            DestroyN(data_, i);
+            Deallocate(data_);
+            throw;
         }
     }
 
@@ -30,8 +37,15 @@ public:
         , capacity_(other.size_)
         , size_(other.size_)  //
     {
-        for (size_t i = 0; i != other.size_; ++i) {
-            CopyConstruct(data_ + i, other.data_[i]);
+        size_t i = 0;
+        try {
+            for (; i != other.size_; ++i) {
+                CopyConstruct(data_ + i, other.data_[i]);
+            }
+        } catch (...) {
+            DestroyN(data_, i);
+            Deallocate(data_);
+            throw;
         }
     }
 
@@ -39,9 +53,17 @@ public:
         if (new_capacity <= capacity_) {
             return;
         }
-        T* new_data = Allocate(new_capacity);
-        for (size_t i = 0; i != size_; ++i) {
-            CopyConstruct(new_data + i, data_[i]);
+        size_t i = 0;
+        T* new_data = nullptr;
+        try {
+            new_data = Allocate(new_capacity);
+            for (; i != size_; ++i) {
+                CopyConstruct(new_data + i, data_[i]);
+            }
+        } catch (...) {
+            DestroyN(new_data, i);
+            Deallocate(new_data);
+            throw;
         }
         DestroyN(data_, size_);
         Deallocate(data_);
