@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <cassert>
 #include <cstdlib>
 #include <iostream>
@@ -15,6 +16,24 @@ public:
     explicit RawMemory(size_t capacity)
         : buffer_(Allocate(capacity))
         , capacity_(capacity) {
+    }
+
+    RawMemory(const RawMemory &) = delete;
+    RawMemory &operator=(const RawMemory &) = delete;
+
+    RawMemory(RawMemory&& other) noexcept
+    : buffer_(std::move(other.buffer_))
+    , capacity_(other.Capacity()){}
+
+    RawMemory& operator=(RawMemory&& other) noexcept {
+        if (this != &other) {
+            Deallocate(buffer_); // Освобождаем текущие ресурсы
+            buffer_ = other.buffer_;
+            capacity_ = other.capacity_;
+            other.buffer_ = nullptr;
+            other.capacity_ = 0;
+        }
+        return *this; // Явно возвращаем *this
     }
 
     ~RawMemory() {
@@ -102,6 +121,10 @@ public:
         std::uninitialized_copy_n(other.data_.GetAddress(), size_, data_.GetAddress());
     }
 
+    Vector(Vector&& other) noexcept {
+        Swap(other);
+    }
+
     void Reserve(size_t new_capacity) {
         if (new_capacity <= data_.Capacity()) {
             return;
@@ -124,6 +147,47 @@ public:
         return data_.Capacity();
     }
 
+    Vector& operator=(const Vector& rhs) {
+        if (this != &rhs) {
+
+            if (rhs.size_ > data_.Capacity()) {
+                /* Применить copy-and-swap */
+                // Если новый размер больше текущей capacity - создаем новый буфер
+                Vector tmp(rhs);
+                Swap(tmp);
+            } else {
+                /* Скопировать элементы из rhs, создав при необходимости новые
+                   или удалив существующие */
+                // Если места достаточно - копируем на место
+                if (rhs.size_ <= size_) {
+                    // Уничтожаем лишние элементы
+                    std::destroy_n(data_.GetAddress() + rhs.size_, size_ - rhs.size_);
+                }
+
+                // Копируем элементы
+                size_t to_copy = std::min(size_, rhs.size_);
+                std::copy_n(rhs.data_.GetAddress(), to_copy, data_.GetAddress());
+
+                // Если rhs больше - создаем новые элементы
+                if (rhs.size_ > size_) {
+                    std::uninitialized_copy_n(rhs.data_.GetAddress() + size_,
+                                            rhs.size_ - size_,
+                                            data_.GetAddress() + size_);
+                }
+
+                size_ = rhs.size_;
+            }
+        }
+        return *this;
+    }
+
+    Vector& operator=(Vector&& rhs) {
+        if (this != &rhs) {
+             Swap(rhs);
+        }
+        return *this;
+    }
+
     const T& operator[](size_t index) const noexcept {
         return const_cast<Vector&>(*this)[index];
     }
@@ -131,6 +195,11 @@ public:
     T& operator[](size_t index) noexcept {
         assert(index < size_);
         return data_[index];
+    }
+
+    void Swap(Vector& other) noexcept {
+        data_.Swap(other.data_);
+        std::swap(size_, other.size_);
     }
 
 private:
