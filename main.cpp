@@ -79,7 +79,6 @@
           v[INDEX] = MAGIC;
           assert(v[INDEX] == MAGIC);
           assert(&v[100] - &v[0] == 100);
-
           v.Reserve(SIZE * 2);
           assert(v.Size() == SIZE);
           assert(v.Capacity() == SIZE * 2);
@@ -160,4 +159,3 @@
       Test1();
       Test2();
   }
-  
