@@ -181,6 +181,84 @@ public:
         return *this;
     }
 
+    void Resize(size_t new_size) {
+        if (new_size == size_) {
+            return;
+        }
+        if (new_size < size_) {
+            std::destroy_n(data_.GetAddress() + new_size, size_ - new_size);
+            size_ = new_size;
+            return;
+        }
+        if (new_size > Capacity()) {
+            // Вызываем Reserve, который сам выберет оптимальную стратегию копирования/перемещения
+            Reserve(new_size);
+        }
+
+        // Создаем новые элементы (если размер увеличивается)
+        try {
+            std::uninitialized_value_construct_n(data_.GetAddress() + size_, new_size - size_);
+        } catch (...) {
+            // В случае исключения оставляем вектор в исходном состоянии
+            if (new_size > Capacity()) {
+                // Если была реаллокация, откатываем ее
+                RawMemory<T> temp(data_.Capacity());
+                if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
+                    std::uninitialized_move_n(data_.GetAddress(), size_, temp.GetAddress());
+                } else {
+                    std::uninitialized_copy_n(data_.GetAddress(), size_, temp.GetAddress());
+                }
+                std::destroy_n(data_.GetAddress(), size_);
+                data_.Swap(temp);
+            }
+            throw;
+        }
+
+        size_ = new_size;
+    }
+
+    void PushBack(const T& value) {
+        EmplaceBack(value);
+    }
+
+    void PushBack(T&& value) {
+        EmplaceBack(std::move(value));
+    }
+
+    template <typename... Args>
+    void EmplaceBack(Args&&... args) {
+        if (size_ == Capacity()) {
+            size_t new_capacity = (size_ == 0) ? 1 : size_ * 2;
+            RawMemory<T> new_data(new_capacity);
+
+            new (new_data + size_) T(std::forward<Args>(args)...);
+
+            if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
+                std::uninitialized_move_n(data_.GetAddress(), size_, new_data.GetAddress());
+            } else {
+                try {
+                    std::uninitialized_copy_n(data_.GetAddress(), size_, new_data.GetAddress());
+                } catch (...) {
+                    std::destroy_at(new_data + size_);
+                    throw;
+                }
+            }
+
+            std::destroy_n(data_.GetAddress(), size_);
+            data_.Swap(new_data);
+        } else {
+            new (data_ + size_) T(std::forward<Args>(args)...);
+        }
+        ++size_;
+    }
+
+    void PopBack() noexcept {
+        if (size_ > 0) {
+            std::destroy_at(data_ + size_ - 1);
+            --size_;
+        }
+    }
+
     Vector& operator=(Vector&& rhs) {
         if (this != &rhs) {
              Swap(rhs);

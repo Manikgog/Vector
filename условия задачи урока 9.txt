@@ -1,30 +1,62 @@
 Задание
-Реализуйте в классе Vector операции:
-Метод Swap, выполняющий обмен содержимого вектора с другим вектором. Операция должна иметь сложностьO(1) и не выбрасывать исключений.
-Перемещающий конструктор. Выполняется за O(1) и не выбрасывает исключений.
-Оператор копирующего присваивания. Выполняется за O(N), где N — максимум из размеров векторов, участвующих в операции.
-Оператор перемещающего присваивания. Выполняется за O(1) и не выбрасывает исключений.
-Сигнатуры операций:
+Сохраните своё решение. Оно вам ещё понадобится в следующих уроках.
+Реализуйте в классе Vector методы Resize, PushBack и PopBack.
+Обе версии метода PushBack должны поддерживать корректную вставку элемента вектора в конец этого же вектора.
+Сигнатура методов:
 
 template <typename T>
 class Vector {
 public:
-    Vector(Vector&& other) noexcept;
-
-    Vector& operator=(const Vector& rhs);
-    Vector& operator=(Vector&& rhs) noexcept;
-
-    void Swap(Vector& other) noexcept;
+    void Resize(size_t new_size);
+    void PushBack(const T& value);
+    void PushBack(T&& value);
+    void PopBack() /* noexcept */;
     ...
 };
-Работу вам облегчит набор тестов:
-tests.cpp
+
+Метод PushBack должен предоставлять строгую гарантию безопасности исключений, когда выполняется любое из условий:
+
+    мove-конструктор у типа T объявлен как noexcept;
+    тип T имеет публичный конструктор копирования.
+
+Если у типа T нет конструктора копирования и move-конструктор может выбрасывать исключения, метод PushBack должен предоставлять базовую гарантию безопасности исключений.
+Сложность метода PushBack должна быть амортизированной константой.
+Метод PopBack не должен выбрасывать исключений при вызове у непустого вектора. При вызове PopBack у пустого вектора поведение неопределённо.
+Метод PopBack должен иметь сложность O(1).
+Метод Resize должен предоставлять строгую гарантию безопасности исключений, когда выполняется любое из условий:
+
+    move-конструктор у типа T объявлен как noexcept;
+    тип T имеет публичный конструктор копирования.
+
+Если у типа T нет конструктора копирования и move-конструктор может выбрасывать исключения, метод Resize может предоставлять базовую или строгую гарантию безопасности исключений.
+Сложность метода Resize должна линейно зависеть от разницы между текущим и новым размером вектора. Если новый размер превышает текущую вместимость вектора, сложность операции может дополнительно линейно зависеть от текущего размера вектора.
+Работу вам упростят эти тесты:
+
+    tests.cpp
 
   #include "vector.h"
 
   #include <stdexcept>
 
   namespace {
+
+  // Магическое число, используемое для отслеживания живости объекта
+  inline const uint32_t DEFAULT_COOKIE = 0xdeadbeef;
+
+  struct TestObj {
+      TestObj() = default;
+      TestObj(const TestObj& other) = default;
+      TestObj& operator=(const TestObj& other) = default;
+      TestObj(TestObj&& other) = default;
+      TestObj& operator=(TestObj&& other) = default;
+      ~TestObj() {
+          cookie = 0;
+      }
+      [[nodiscard]] bool IsAlive() const noexcept {
+          return cookie == DEFAULT_COOKIE;
+      }
+      uint32_t cookie = DEFAULT_COOKIE;
+  };
 
   struct Obj {
       Obj() {
@@ -266,20 +298,103 @@ tests.cpp
       }
   }
 
+  void Test4() {
+      const size_t ID = 42;
+      const size_t SIZE = 100'500;
+      {
+          Obj::ResetCounters();
+          Vector<Obj> v;
+          v.Resize(SIZE);
+          assert(v.Size() == SIZE);
+          assert(v.Capacity() == SIZE);
+          assert(Obj::num_default_constructed == SIZE);
+      }
+      assert(Obj::GetAliveObjectCount() == 0);
+
+      {
+          const size_t NEW_SIZE = 10'000;
+          Obj::ResetCounters();
+          Vector<Obj> v(SIZE);
+          v.Resize(NEW_SIZE);
+          assert(v.Size() == NEW_SIZE);
+          assert(v.Capacity() == SIZE);
+          assert(Obj::num_destroyed == SIZE - NEW_SIZE);
+      }
+      assert(Obj::GetAliveObjectCount() == 0);
+      {
+          Obj::ResetCounters();
+          Vector<Obj> v(SIZE);
+          Obj o{ID};
+          v.PushBack(o);
+          assert(v.Size() == SIZE + 1);
+          assert(v.Capacity() == SIZE * 2);
+          assert(v[SIZE].id == ID);
+          assert(Obj::num_default_constructed == SIZE);
+          assert(Obj::num_copied == 1);
+          assert(Obj::num_constructed_with_id == 1);
+          assert(Obj::num_moved == SIZE);
+      }
+      assert(Obj::GetAliveObjectCount() == 0);
+      {
+          Obj::ResetCounters();
+          Vector<Obj> v(SIZE);
+          v.PushBack(Obj{ID});
+          assert(v.Size() == SIZE + 1);
+          assert(v.Capacity() == SIZE * 2);
+          assert(v[SIZE].id == ID);
+          assert(Obj::num_default_constructed == SIZE);
+          assert(Obj::num_copied == 0);
+          assert(Obj::num_constructed_with_id == 1);
+          assert(Obj::num_moved == SIZE + 1);
+      }
+      {
+          Obj::ResetCounters();
+          Vector<Obj> v;
+          v.PushBack(Obj{ID});
+          v.PopBack();
+          assert(v.Size() == 0);
+          assert(v.Capacity() == 1);
+          assert(Obj::GetAliveObjectCount() == 0);
+      }
+
+      {
+          Vector<TestObj> v(1);
+          assert(v.Size() == v.Capacity());
+          // Операция PushBack существующего элемента вектора должна быть безопасна
+          // даже при реаллокации памяти
+          v.PushBack(v[0]);
+          assert(v[0].IsAlive());
+          assert(v[1].IsAlive());
+      }
+      {
+          Vector<TestObj> v(1);
+          assert(v.Size() == v.Capacity());
+          // Операция PushBack для перемещения существующего элемента вектора должна быть безопасна
+          // даже при реаллокации памяти
+          v.PushBack(std::move(v[0]));
+          assert(v[0].IsAlive());
+          assert(v[1].IsAlive());
+      }
+  }
+
   int main() {
       Test1();
       Test2();
       Test3();
+      Test4();
   }
 
-Что отправлять на проверку
+
+    Что отправлять на проверку
+
 Исходный код классов Vector и RawMemory должен располагаться в файле vector.h.
-Как будет тестироваться ваш код
-Тренажёр проверит работу методов класса Vector, работу операций копирования и перемещения и их асимптотическую сложность.
-Не меняйте сигнатуру публичных методов класса Vector. Иначе ваше решение может быть отклонено.
-Код скомпилируется со включёнными UB и Address санитайзерами, чтобы выявить потенциальные проблемы при работе с указателями и динамической памятью.
+Как будет тестироваться ваша программа
+Тренажёр проверит работу методов класса Vector, включая разработанные в этом задании методы Resize, PushBack и PopBack.
+Не меняйте сигнатуру публичных методов класса Vector. Иначе решение может быть не принято.
+Так как вызов PopBack на пустом векторе может привести к неопределённому поведению, тренажёр не будет вызывать этот метод у пустого вектора. Добавление спецификатора noexcept у этого метода остаётся на ваше усмотрение.
+Код программы будет скомпилирован со включёнными UB и Address санитайзерами, чтобы выявить потенциальные проблемы при работе с указателями и динамической памятью.
 Функция main будет заменена кодом из тренажёра.
 
 Подсказка:
-Операция копирующего присваивания должна применять идиому copy-and-swap только при нехватке места в векторе-приёмнике.
-Когда будете присваивать вектор меньшего размера, не забудьте удалить лишние элементы из вектора-приёмника.
+    Если у вас сложности — вернитесь к схемам в уроке.
+    Подумайте, как можно устранить дублирование кода двумя версиями PushBack.
