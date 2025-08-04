@@ -1,46 +1,33 @@
 Задание
-Сохраните своё решение. Оно вам ещё понадобится в следующих уроках.
-Реализуйте в классе Vector методы Resize, PushBack и PopBack.
-Обе версии метода PushBack должны поддерживать корректную вставку элемента вектора в конец этого же вектора.
-Сигнатура методов:
+Реализуйте в классе Vector метод EmplaceBack, добавляющий новый элемент в конец вектора. Созданный объект должен быть сконструирован с использованием аргументов метода EmplaceBack.
 
 template <typename T>
 class Vector {
 public:
-    void Resize(size_t new_size);
-    void PushBack(const T& value);
-    void PushBack(T&& value);
-    void PopBack() /* noexcept */;
-    ...
+    template <typename... Args>
+    T& EmplaceBack(Args&&... args);
 };
 
-Метод PushBack должен предоставлять строгую гарантию безопасности исключений, когда выполняется любое из условий:
-
-    мove-конструктор у типа T объявлен как noexcept;
-    тип T имеет публичный конструктор копирования.
-
-Если у типа T нет конструктора копирования и move-конструктор может выбрасывать исключения, метод PushBack должен предоставлять базовую гарантию безопасности исключений.
-Сложность метода PushBack должна быть амортизированной константой.
-Метод PopBack не должен выбрасывать исключений при вызове у непустого вектора. При вызове PopBack у пустого вектора поведение неопределённо.
-Метод PopBack должен иметь сложность O(1).
-Метод Resize должен предоставлять строгую гарантию безопасности исключений, когда выполняется любое из условий:
+Метод EmplaceBack должен предоставлять строгую гарантию безопасности исключений, когда выполняется любое из условий:
 
     move-конструктор у типа T объявлен как noexcept;
     тип T имеет публичный конструктор копирования.
 
-Если у типа T нет конструктора копирования и move-конструктор может выбрасывать исключения, метод Resize может предоставлять базовую или строгую гарантию безопасности исключений.
-Сложность метода Resize должна линейно зависеть от разницы между текущим и новым размером вектора. Если новый размер превышает текущую вместимость вектора, сложность операции может дополнительно линейно зависеть от текущего размера вектора.
-Работу вам упростят эти тесты:
+Если у типа T нет конструктора копирования и move-конструктор может выбрасывать исключения, метод EmplaceBack должен предоставлять базовую гарантию безопасности исключений.
+Сложность метода EmplaceBack должна быть амортизированной константой.
+Работу вам упростит набор тестов:
 
     tests.cpp
 
   #include "vector.h"
 
+  #include <iostream>
   #include <stdexcept>
+  #include <string>
 
   namespace {
 
-  // Магическое число, используемое для отслеживания живости объекта
+  // "Магическое" число, используемое для отслеживания живости объекта
   inline const uint32_t DEFAULT_COOKIE = 0xdeadbeef;
 
   struct TestObj {
@@ -74,6 +61,13 @@ public:
           ++num_constructed_with_id;
       }
 
+      Obj(int id, std::string name)
+          : id(id)
+          , name(std::move(name))  //
+      {
+          ++num_constructed_with_id_and_name;
+      }
+
       Obj(const Obj& other)
           : id(other.id)  //
       {
@@ -99,7 +93,7 @@ public:
 
       static int GetAliveObjectCount() {
           return num_default_constructed + num_copied + num_moved + num_constructed_with_id
-              - num_destroyed;
+              + num_constructed_with_id_and_name - num_destroyed;
       }
 
       static void ResetCounters() {
@@ -109,14 +103,17 @@ public:
           num_moved = 0;
           num_destroyed = 0;
           num_constructed_with_id = 0;
+          num_constructed_with_id_and_name = 0;
       }
 
       bool throw_on_copy = false;
       int id = 0;
+      std::string name;
 
       static inline int default_construction_throw_countdown = 0;
       static inline int num_default_constructed = 0;
       static inline int num_constructed_with_id = 0;
+      static inline int num_constructed_with_id_and_name = 0;
       static inline int num_copied = 0;
       static inline int num_moved = 0;
       static inline int num_destroyed = 0;
@@ -361,7 +358,7 @@ public:
           Vector<TestObj> v(1);
           assert(v.Size() == v.Capacity());
           // Операция PushBack существующего элемента вектора должна быть безопасна
-          // даже при реаллокации памяти
+          // даже при реаллокации памии
           v.PushBack(v[0]);
           assert(v[0].IsAlive());
           assert(v[1].IsAlive());
@@ -377,24 +374,55 @@ public:
       }
   }
 
+  void Test5() {
+      const int ID = 42;
+      using namespace std::literals;
+      {
+          Obj::ResetCounters();
+          Vector<Obj> v;
+          auto& elem = v.EmplaceBack(ID, "Ivan"s);
+          assert(v.Capacity() == 1);
+          assert(v.Size() == 1);
+          assert(&elem == &v[0]);
+          assert(v[0].id == ID);
+          assert(v[0].name == "Ivan"s);
+          assert(Obj::num_constructed_with_id_and_name == 1);
+          assert(Obj::GetAliveObjectCount() == 1);
+      }
+      assert(Obj::GetAliveObjectCount() == 0);
+      {
+          Vector<TestObj> v(1);
+          assert(v.Size() == v.Capacity());
+          // Операция EmplaceBack существующего элемента вектора должна быть безопасна
+          // даже при реаллокации памяти
+          v.EmplaceBack(v[0]);
+          assert(v[0].IsAlive());
+          assert(v[1].IsAlive());
+      }
+  }
+
   int main() {
-      Test1();
-      Test2();
-      Test3();
-      Test4();
+      try {
+          Test1();
+          Test2();
+          Test3();
+          Test4();
+          Test5();
+      } catch (const std::exception& e) {
+          std::cerr << e.what() << std::endl;
+      }
   }
 
 
-    Что отправлять на проверку
+    Ограничения
 
-Исходный код классов Vector и RawMemory должен располагаться в файле vector.h.
+Не меняйте сигнатуру публичных методов класса Vector. Иначе ваше решение может быть отклонено.
+Класс Vector не должен ничего выводить в потоки stdout и stderr. В противном случае ваше решение может быть отклонено.
 Как будет тестироваться ваша программа
-Тренажёр проверит работу методов класса Vector, включая разработанные в этом задании методы Resize, PushBack и PopBack.
-Не меняйте сигнатуру публичных методов класса Vector. Иначе решение может быть не принято.
-Так как вызов PopBack на пустом векторе может привести к неопределённому поведению, тренажёр не будет вызывать этот метод у пустого вектора. Добавление спецификатора noexcept у этого метода остаётся на ваше усмотрение.
-Код программы будет скомпилирован со включёнными UB и Address санитайзерами, чтобы выявить потенциальные проблемы при работе с указателями и динамической памятью.
-Функция main будет заменена кодом из тренажёра.
+Тренажёр проверит работу класса Vector, включая разработанный в этом задании метод EmplaceBack.
+Код скомпилируется со включенными UB и Address санитайзерами, чтобы выявить потенциальные проблемы при работе с указателями и динамической памятью.
+Функция main будет заменена на версию из тренажёра.
 
 Подсказка:
-    Если у вас сложности — вернитесь к схемам в уроке.
-    Подумайте, как можно устранить дублирование кода двумя версиями PushBack.
+    Когда работа над методом EmplaceBack завершится, его можно будет использовать для реализации обоих методов PushBack.
+    Чтобы передать параметры конструктору элементов вектора, используйте forwarding-ссылки и std::forward.

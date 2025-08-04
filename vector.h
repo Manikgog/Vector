@@ -226,7 +226,7 @@ public:
     }
 
     template <typename... Args>
-    void EmplaceBack(Args&&... args) {
+    T& EmplaceBack(Args&&... args) {
         if (size_ == Capacity()) {
             size_t new_capacity = (size_ == 0) ? 1 : size_ * 2;
             RawMemory<T> new_data(new_capacity);
@@ -250,6 +250,7 @@ public:
             new (data_ + size_) T(std::forward<Args>(args)...);
         }
         ++size_;
+        return data_[size_ - 1];
     }
 
     void PopBack() noexcept {
