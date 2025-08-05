@@ -101,6 +101,33 @@ template <typename T>
 class Vector {
 public:
 
+    using iterator = T*;
+    using const_iterator = const T*;
+
+    iterator begin() noexcept {
+        return data_.GetAddress();  // Было: return &data_[0];
+    }
+
+    iterator end() noexcept {
+        return data_.GetAddress() + size_;  // Было: return &data_[size_];
+    }
+
+    const_iterator begin() const noexcept {
+        return data_.GetAddress();
+    }
+
+    const_iterator end() const noexcept {
+        return data_.GetAddress() + size_;
+    }
+
+    const_iterator cbegin() const noexcept {
+        return begin();
+    }
+
+    const_iterator cend() const noexcept {
+        return end();
+    }
+
     Vector() = default;
 
     explicit Vector(size_t size)
@@ -251,6 +278,73 @@ public:
         }
         ++size_;
         return data_[size_ - 1];
+    }
+
+    template <typename... Args>
+    iterator Emplace(const_iterator pos, Args&&... args) {
+        size_t offset = pos - begin();
+
+        if (size_ == Capacity()) {
+            // Реаллокация — старая логика
+            size_t new_capacity = (size_ == 0) ? 1 : size_ * 2;
+            RawMemory<T> new_data(new_capacity);
+
+            new (new_data + offset) T(std::forward<Args>(args)...);
+
+            if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
+                std::uninitialized_move_n(data_.GetAddress(), offset, new_data.GetAddress());
+                std::uninitialized_move_n(data_.GetAddress() + offset, size_ - offset, new_data.GetAddress() + offset + 1);
+            } else {
+                try {
+                    std::uninitialized_copy_n(data_.GetAddress(), offset, new_data.GetAddress());
+                    std::uninitialized_copy_n(data_.GetAddress() + offset, size_ - offset, new_data.GetAddress() + offset + 1);
+                } catch (...) {
+                    std::destroy_at(new_data + offset);
+                    throw;
+                }
+            }
+
+            std::destroy_n(data_.GetAddress(), size_);
+            data_.Swap(new_data);
+        } else {
+            if (offset < size_) {
+                // Сохраняем значение, если вставляем элемент из этого же вектора
+                T temp(std::forward<Args>(args)...);
+
+                // Создаем новый элемент в конце (перемещаем последний элемент)
+                new (data_ + size_) T(std::move(data_[size_ - 1]));
+
+                // Сдвигаем элементы вправо
+                for (auto it = end() - 1; it != begin() + offset; --it) {
+                    *it = std::move(*(it - 1));
+                }
+
+                // Заменяем элемент на позиции вставки
+                std::destroy_at(data_ + offset);
+                data_[offset] = std::move(temp);
+            } else {
+                // Вставка в конец
+                new (data_ + size_) T(std::forward<Args>(args)...);
+            }
+        }
+        ++size_;
+        return begin() + offset;
+    }
+
+    iterator Insert(const_iterator pos, const T& value) {
+        return Emplace(pos, value);
+    }
+
+    iterator Insert(const_iterator pos, T&& value) {
+        return Emplace(pos, std::move(value));
+    }
+
+    iterator Erase(const_iterator pos) noexcept(std::is_nothrow_move_assignable_v<T>) {
+        size_t offset = pos - begin();
+        std::move(begin() + offset + 1, end(), begin() + offset);
+        std::destroy_at(data_ + size_ - 1);
+        --size_;
+        return begin() + offset;
     }
 
     void PopBack() noexcept {
