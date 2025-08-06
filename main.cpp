@@ -427,7 +427,8 @@ void Test6() {
         assert(v[1].id == obj.id);
         assert(Obj::num_copied == 1);
         assert(Obj::num_default_constructed == SIZE);
-        assert(Obj::GetAliveObjectCount() == SIZE + 2);
+        int getAliveObjectCount = Obj::GetAliveObjectCount();
+        assert(getAliveObjectCount == SIZE + 2);
     }
     {
         Obj::ResetCounters();
@@ -529,13 +530,7 @@ void Test6() {
         v.Reserve(SIZE * 2);
         const int old_num_moved = Obj::num_moved;
         assert(v.Capacity() == SIZE * 2);
-        for (size_t i = 0; i < v.Size(); ++i) {
-            std::cout << "v[i].id = " << v[i].id << " " << "v[i].name = " << v[i].name << std::endl;
-        }
         auto* pos = v.Emplace(v.cbegin() + 3, ID, "Ivan"s);
-        for (size_t i = 0; i < v.Size(); ++i) {
-            std::cout << "v[i].id = " << v[i].id << " " << "v[i].name = " << v[i].name << std::endl;
-        }
         assert(v.Size() == SIZE + 1);
         assert(&*pos == &v[3]);
         assert(v[3].id == ID);
